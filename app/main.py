@@ -99,6 +99,7 @@ _default_origins = [
     "http://127.0.0.1:5174",  # Vite dev server (fallback port)
     "http://localhost:3000",  # Alternative dev server
     "http://127.0.0.1:3000",  # Alternative dev server
+    "https://notch-local-frontend.onrender.com", # new origin for render deployed frontend
 ]
 
 _cors_origins_env = os.getenv("CORS_ORIGINS", "")
