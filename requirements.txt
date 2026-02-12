@@ -1,0 +1,39 @@
+# Company Research Mapping Tool - Backend Dependencies
+
+# Web framework
+fastapi>=0.109.0
+
+# ASGI server
+uvicorn[standard]>=0.27.0
+
+# Data validation
+pydantic>=2.5.0
+
+# Async HTTP client for API requests
+httpx>=0.26.0
+
+# Environment variable management
+python-dotenv>=1.0.0
+
+# HTML parsing for web scraping
+beautifulsoup4>=4.12.0
+
+# XML/HTML parser (faster than html.parser)
+lxml>=5.0.0
+
+# Fuzzy string matching for executive deduplication
+rapidfuzz>=3.6.0
+
+# Testing
+pytest>=8.0.0
+
+# --- Database ---
+sqlalchemy>=2.0
+psycopg2-binary
+alembic
+
+# --- Document Processing ---
+python-docx>=1.1.0
+
+# OpenRouter (OpenAI-compatible) SDK
+openai>=1.0.0
