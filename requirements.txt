@@ -39,3 +39,5 @@ python-docx>=1.1.0
 
 # OpenRouter (OpenAI-compatible) SDK
 openai>=1.0.0
+
+python-multipart
