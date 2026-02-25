@@ -1,5 +1,5 @@
 from sqlalchemy import MetaData
 from sqlalchemy.orm import declarative_base
 
-metadata = MetaData(schema="notch")
+metadata = MetaData(schema="public")
 Base = declarative_base(metadata=metadata)
