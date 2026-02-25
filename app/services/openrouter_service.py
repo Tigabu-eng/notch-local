@@ -6,6 +6,7 @@ OpenAI-compatible API.
 
 from __future__ import annotations
 
+import httpx
 import json
 import logging
 import os
@@ -15,7 +16,19 @@ from typing import Any
 
 from openai import AsyncOpenAI
 
-from app.models import EmploymentRecord, Executive, CallInsight, ActionItem, PersonMention
+from app.models import (
+    EmploymentRecord,
+    Executive,
+    CallInsight,
+    ActionItem,
+    PersonMention,
+    IntervieweeProfile,
+    CareerHistory,
+    LeadershipScope,
+    TransformationExperience,
+    PrivateEquityExperience,
+    CallAnalysisResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,23 +43,27 @@ OPENROUTER_APP_NAME = os.getenv("OPENROUTER_APP_NAME", "")
 
 # Model configuration
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
-OPENROUTER_EXEC_EXTRACTION_MODEL = os.getenv("OPENROUTER_EXEC_EXTRACTION_MODEL", OPENROUTER_MODEL)
-OPENROUTER_CALL_ANALYSIS_MODEL = os.getenv("OPENROUTER_CALL_ANALYSIS_MODEL", OPENROUTER_MODEL)
+OPENROUTER_EXEC_EXTRACTION_MODEL = os.getenv(
+    "OPENROUTER_EXEC_EXTRACTION_MODEL", OPENROUTER_MODEL
+)
+OPENROUTER_CALL_ANALYSIS_MODEL = os.getenv(
+    "OPENROUTER_CALL_ANALYSIS_MODEL", OPENROUTER_MODEL
+)
 
 
 class OpenRouterService:
     """Service for LLM-based structured data extraction via OpenRouter."""
 
     def __init__(self, api_key: str | None = None) -> None:
-        # Prefer explicit api_key, otherwise env var; strip to avoid hidden whitespace/newlines.
-        self.api_key = (api_key or OPENROUTER_API_KEY or "").strip()
+        # self.api_key = api_key or OPENROUTER_API_KEY
+        self.api_key = OPENROUTER_API_KEY
 
-        # Optional attribution headers (recommended by OpenRouter)
+        # Build optional attribution headers
         default_headers: dict[str, str] = {}
-        if OPENROUTER_SITE_URL:
-            default_headers["HTTP-Referer"] = OPENROUTER_SITE_URL
-        if OPENROUTER_APP_NAME:
-            default_headers["X-Title"] = OPENROUTER_APP_NAME
+        # if OPENROUTER_SITE_URL:
+        #     default_headers["HTTP-Referer"] = OPENROUTER_SITE_URL
+        # if OPENROUTER_APP_NAME:
+        #     default_headers["X-Title"] = OPENROUTER_APP_NAME
 
         self._client: AsyncOpenAI | None = None
         self._default_headers = default_headers
@@ -60,7 +77,8 @@ class OpenRouterService:
         """Get or create SDK client."""
         if self._client is None:
             self._client = AsyncOpenAI(
-                api_key=self.api_key,
+                # api_key=self.api_key,
+                api_key=f"{self.api_key}",
                 base_url=OPENROUTER_BASE_URL,
                 default_headers=self._default_headers or None,
             )
@@ -97,8 +115,9 @@ class OpenRouterService:
             logger.exception("OpenRouter SDK request failed: %s", e)
             return None
 
-
-    async def extract_executives(self, content: str, company_name: str) -> list[Executive]:
+    async def extract_executives(
+        self, content: str, company_name: str
+    ) -> list[Executive]:
         """Extract structured executive data from text using LLM."""
         prompt = self._build_extraction_prompt(content, company_name)
         content_text = await self._chat_completion(
@@ -124,15 +143,18 @@ class OpenRouterService:
             logger.error(f"OpenRouter extraction failed: {e}")
             return []
 
-    async def analyze_call(self, transcript: str) -> CallInsight | None:
+    async def analyze_call(self, transcript: str) -> CallAnalysisResult | None:
         """Analyze a call transcript into structured insights.
 
-        Returns CallInsight or None if analysis fails.
+        Returns CallAnalysisResult or None if analysis fails.
         """
-        prompt = self._build_call_analysis_prompt(transcript)
+        user_prompt, system_prompt = self._build_call_analysis_prompt(transcript)
         content_text = await self._chat_completion(
             model=OPENROUTER_CALL_ANALYSIS_MODEL,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "user", "content": user_prompt},
+                {"role": "system", "content": system_prompt},
+            ],
             temperature=0,
             response_format={"type": "json_object"},
         )
@@ -142,20 +164,53 @@ class OpenRouterService:
         try:
             json_str = self._extract_json(content_text)
             data = json.loads(json_str)
+            interviewee_profile_data = data.get("interviewee_profile", {})
+            interviewee_profile = None
+            if interviewee_profile_data and isinstance(interviewee_profile_data, dict):
+                interviewee_profile = IntervieweeProfile(
+                    full_name=interviewee_profile_data.get("identity", {}).get("full_name",""),
+                    current_title=interviewee_profile_data.get("identity", {}).get("current_title",""),
+                    current_company=interviewee_profile_data.get("identity", {}).get("current_company",""),
+                    seniority_level=interviewee_profile_data.get("identity", {}).get("seniority_level",""),
+                    industry_focus=list(interviewee_profile_data.get("identity", {}).get("industry_focus") or []),
+                    years_experience_estimate=interviewee_profile_data.get("identity", {}).get("years_experience_estimate"),
+                    career_history=[CareerHistory(**ch) for ch in interviewee_profile_data.get("career_history", []) if isinstance(ch, dict)],
+                    leadership_scope= LeadershipScope(**interviewee_profile_data.get("leadership_scope", {})) if interviewee_profile_data.get("leadership_scope") else None,
+                    transformation_experience=[TransformationExperience(**te) for te in interviewee_profile_data.get("transformation_experience", []) if isinstance(te, dict)],
+                    private_equity_experience=PrivateEquityExperience(**interviewee_profile_data.get("private_equity_experience", {})) if interviewee_profile_data.get("private_equity_experience") else None,
+                    technical_capabilities=list(interviewee_profile_data.get("technical_capabilities") or []),
+                    notable_achievements=list(interviewee_profile_data.get("notable_achievements") or []),
+                    risk_flags=list(interviewee_profile_data.get("risk_flags") or []),
+                    searchable_summary=interviewee_profile_data.get("searchable_summary"),
+                    confidence_score=interviewee_profile_data.get("confidence_score"),
+                )
 
-            return CallInsight(
-                summary=data.get("summary", "").strip(),
-                tags=[t for t in (data.get("tags") or []) if isinstance(t, str)],
-                action_items=[
-                    ActionItem(**ai) for ai in (data.get("action_items") or [])
-                    if isinstance(ai, dict) and ai.get("description")
-                ],
-                people_mentioned=[
-                    PersonMention(**p) for p in (data.get("people_mentioned") or [])
-                    if isinstance(p, dict) and p.get("name")
-                ],
-                key_decisions=[d for d in (data.get("key_decisions") or []) if isinstance(d, str)],
-            )
+
+            return CallAnalysisResult(
+                    call_id=None,  # to be filled by caller
+                    insights=CallInsight(
+                        summary=data.get("metadata", {}).get("summary", "").strip(),
+                        tags=[t for t in (data.get("metadata", {}).get("tags") or []) if isinstance(t, str)],
+                        action_items=[
+                            ActionItem(**ai)
+                            for ai in (data.get("metadata", {}).get("action_items") or [])
+                            if isinstance(ai, dict) and ai.get("description")
+                        ],
+                        people_mentioned=[
+                            PersonMention(**p)
+                            for p in (data.get("metadata", {}).get("people_mentioned") or [])
+                            if isinstance(p, dict) and p.get("name")
+                        ],
+                        key_decisions=[
+                            d for d in (data.get("metadata", {}).get("key_decisions") or []) if isinstance(d, str)
+                        ],
+                        call_type=data.get("call_classification", {}).get("call_type"),
+                    ),
+                    interviewee_profile= interviewee_profile,
+                    analyzed_at=datetime.now(),
+
+                )
+        
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse call analysis response as JSON: {e}")
             return None
@@ -163,34 +218,177 @@ class OpenRouterService:
             logger.error(f"Call analysis parsing failed: {e}")
             return None
 
+    async def generate_embedding(self, text: str) -> list[float]:
+        client = self._get_client()
+        response = await client.embeddings.create(
+            model="text-embedding-3-small",  # 1536 dimension
+            input=text
+        )
+
+        return response.data[0].embedding
     def _build_call_analysis_prompt(self, transcript: str) -> str:
         """Build prompt for transcript analysis."""
-        return f'''You are an analyst. Turn the call transcript into structured business insights.
+        system_prompt = f""" 
+You are an executive intelligence extraction engine.
+You MUST:
+- Return ONLY valid JSON.
+- Follow the response schema EXACTLY as provided.
+- Include all fields even if null.
+- Do not add explanations.
+- Do not wrap output in markdown.
+- If information is not explicitly stated, return null.
+- Do not hallucinate or infer beyond strong evidence.
+- Confidence scores must be between 0 and 1.
+- All enums must match allowed values exactly.
 
-Return ONLY valid JSON (no markdown, no extra text) with this exact shape:
+If output cannot be generated without violating instructions, return:
+{{ "error": "insufficient_data" }}
+"""
+        user_prompt = f""" 
+Analyze the following transcript and extract structured intelligence.
+
+First, classify the call type.
+
+If the transcript / call primarily discusses one person's career background, professional experience, and leadership history, classify it as "interview".
+
+Otherwise classify it as one of:
+- investor_call
+- strategy_meeting
+- sales_call
+- operational_meeting
+- networking_call
+- unknown
+
+Then extract metadata and (if applicable) interviewee intelligence.
+
+You MUST return a JSON object with EXACTLY the following structure:
+
 {{
-  "summary": "2-6 sentence summary of the call",
-  "tags": ["tag1", "tag2", "tag3"],
-  "action_items": [
-    {{"description": "what to do", "owner": "optional person/team", "urgency": "low|medium|high"}}
-  ],
-  "people_mentioned": [
-    {{"name": "Full Name", "role": "optional", "company": "optional"}}
-  ],
-  "key_decisions": ["decision 1", "decision 2"]
+  "call_classification": {{
+    "call_type": "interview | investor_call | strategy_meeting | sales_call | operational_meeting | networking_call | unknown",
+    "confidence_score": 0.0
+  }},
+
+  "metadata": {{
+    "summary": "string",
+    "tags": ["string"],
+    "action_items": [
+      {{
+        "description": "string",
+        "owner": "string or null",
+        "urgency": "low | medium | high | null"
+      }}
+    ],
+    "people_mentioned": [
+      {{
+        "name": "string",
+        "role": "string or null",
+        "company": "string or null"
+      }}
+    ],
+    "key_decisions": ["string"]
+  }},
+
+  "interviewee_profile": {{
+    "identity": {{
+      "full_name": "string or null",
+      "current_title": "string or null",
+      "current_company": "string or null",
+      "seniority_level": "C-level | VP | Director | Manager | Individual Contributor | Unknown | null",
+      "industry_focus": ["string"],
+      "years_experience_estimate": "number or null"
+    }},
+
+    "career_history": [
+      {{
+        "company": "string or null",
+        "title": "string or null",
+        "company_type": "Public | Private | PE-backed | Startup | Unknown | null",
+        "duration_estimate_years": "number or null"
+      }}
+    ],
+
+    "leadership_scope": {{
+      "team_size_managed": "number or null",
+      "budget_responsibility": "string or null",
+      "geographical_scope": "Global | Regional | Local | Unknown | null"
+    }},
+
+    "transformation_experience": [
+      {{
+        "type": "Cloud Transformation | Turnaround | Digital Transformation | Operational Scaling | M&A | IPO | Other | null",
+        "description": "string or null",
+        "role": "Led | Co-led | Participated | Unknown | null",
+        "quantifiable_impact": "string or null",
+        "confidence": "number between 0 and 1 or null"
+      }}
+    ],
+
+    "private_equity_exposure": {{
+      "has_pe_experience": "true | false | null",
+      "description": "string or null"
+    }},
+
+    "technical_capabilities": ["string"],
+    "notable_achievements": ["string"],
+    "risk_flags": ["string"],
+
+    "searchable_summary": "string or null",
+    "confidence_score": "number between 0 and 1 or null"
+  }}
 }}
 
-Rules:
-- Be concise and concrete.
-- tags should be short (1-3 words), and 5-12 items max.
-- action_items should be actionable, 0-10 items.
-- people_mentioned should include only real people referenced, 0-15 items.
-- key_decisions should include explicit decisions/commitments, 0-10 items.
-- If something is unknown, omit it or use null/empty list (do not invent).
+INPUT TRANSCRIPT: 
+{transcript}
 
-TRANSCRIPT:
-{transcript[:16000]}
-'''
+Rules:
+- If call_type is not "interview", set interviewee_profile = null.
+- Include ALL keys even if null.
+- Do not remove empty arrays.
+- Do not invent missing values.
+- Ensure valid JSON only.
+"""
+        return (system_prompt, user_prompt)
+        
+    def _sanitize_prompt_input(self, text: str, max_length: int = 8000) -> str:
+        """Sanitize user input before including in LLM prompts.
+
+        Removes or escapes potentially dangerous patterns that could
+        be used for prompt injection attacks.
+
+        Args:
+            text: The input text to sanitize.
+            max_length: Maximum allowed length for the text.
+
+        Returns:
+            Sanitized text safe for inclusion in prompts.
+        """
+        if not text:
+            return ""
+
+        # Truncate to max length
+        text = text[:max_length]
+
+        # Remove common prompt injection patterns
+        # These patterns attempt to override system instructions
+        injection_patterns = [
+            r"ignore\s+(previous|all|above)\s+instructions",
+            r"disregard\s+(previous|all|above)",
+            r"forget\s+(everything|all|previous)",
+            r"new\s+instructions?:",
+            r"system\s*:",
+            r"assistant\s*:",
+            r"human\s*:",
+            r"\[INST\]",
+            r"\[/INST\]",
+            r"<\|im_start\|>",
+            r"<\|im_end\|>",
+        ]
+
+        for pattern in injection_patterns:
+            text = re.sub(pattern, "[REDACTED]", text, flags=re.IGNORECASE)
+
+        return text
 
     def _build_extraction_prompt(self, content: str, company_name: str) -> str:
         """Build the prompt for executive extraction.
@@ -202,7 +400,7 @@ TRANSCRIPT:
         safe_company_name = self._sanitize_prompt_input(company_name, max_length=200)
         safe_content = self._sanitize_prompt_input(content, max_length=8000)
 
-        return f'''Extract executives from {safe_company_name}.
+        return f"""Extract executives from {safe_company_name}.
 
 STRICT VALIDATION:
 1. Names MUST be real human names (First Last format, typically 2-4 words)
@@ -267,7 +465,7 @@ Do NOT default to the current year - unknown dates should remain null.
 TEXT TO ANALYZE:
 {safe_content}
 
-Return ONLY valid JSON array, no other text or markdown.'''
+Return ONLY valid JSON array, no other text or markdown."""
 
     def _extract_json(self, text: str) -> str:
         """Extract JSON from response, handling markdown code blocks."""
@@ -294,20 +492,7 @@ Return ONLY valid JSON array, no other text or markdown.'''
         if not name or not isinstance(name, str):
             return False
 
-        invalid_patterns = [
-            "including",
-            "said",
-            "according",
-            "reported",
-            "ceo",
-            "cfo",
-            "coo",
-            "president",
-            "officer",
-            "executive",
-            "director",
-            "manager",
-        ]
+        name = name.strip()
         name_lower = name.lower()
 
         # Check confidence score if present - reject low confidence entries
@@ -322,17 +507,42 @@ Return ONLY valid JSON array, no other text or markdown.'''
 
         # Reject names that are clearly titles or roles (exact matches)
         title_only_patterns = {
-            "ceo", "cfo", "coo", "cto", "cmo", "cio", "chro", "cpo",
-            "president", "vice president", "vp",
-            "chief executive officer", "chief financial officer",
-            "chief operating officer", "chief technology officer",
-            "chief marketing officer", "chief information officer",
-            "executive", "director", "manager", "officer",
-            "chairman", "chairwoman", "chairperson",
-            "founder", "co-founder", "cofounder",
-            "partner", "managing partner", "general partner",
-            "head of", "leader", "leadership", "team",
-            "board member", "board of directors",
+            "ceo",
+            "cfo",
+            "coo",
+            "cto",
+            "cmo",
+            "cio",
+            "chro",
+            "cpo",
+            "president",
+            "vice president",
+            "vp",
+            "chief executive officer",
+            "chief financial officer",
+            "chief operating officer",
+            "chief technology officer",
+            "chief marketing officer",
+            "chief information officer",
+            "executive",
+            "director",
+            "manager",
+            "officer",
+            "chairman",
+            "chairwoman",
+            "chairperson",
+            "founder",
+            "co-founder",
+            "cofounder",
+            "partner",
+            "managing partner",
+            "general partner",
+            "head of",
+            "leader",
+            "leadership",
+            "team",
+            "board member",
+            "board of directors",
         }
         if name_lower in title_only_patterns:
             logger.debug(f"Rejected '{name}' - exact match to title pattern")
@@ -340,38 +550,97 @@ Return ONLY valid JSON array, no other text or markdown.'''
 
         # Reject if name contains title-indicating substrings
         invalid_substrings = [
-            "chief ", " officer", "president of", "vice president",
-            "director of", "head of", "manager of",
-            "executive team", "leadership team", "management team",
-            "the ceo", "the cfo", "the president",
-            "including", "said", "according", "reported",
-            "company's", "companies", "corporation",
-            "announced", "statement", "press release",
+            "chief ",
+            " officer",
+            "president of",
+            "vice president",
+            "director of",
+            "head of",
+            "manager of",
+            "executive team",
+            "leadership team",
+            "management team",
+            "the ceo",
+            "the cfo",
+            "the president",
+            "including",
+            "said",
+            "according",
+            "reported",
+            "company's",
+            "companies",
+            "corporation",
+            "announced",
+            "statement",
+            "press release",
         ]
         if any(substring in name_lower for substring in invalid_substrings):
             logger.debug(f"Rejected '{name}' - contains invalid substring")
             return False
 
+        # Reject if name starts with articles or common non-name words
+        invalid_starts = [
+            "the ",
+            "a ",
+            "an ",
+            "our ",
+            "their ",
+            "his ",
+            "her ",
+            "mr. ",
+            "mrs. ",
+            "ms. ",
+            "dr. ",  # Keep these but strip later
+            "this ",
+            "that ",
+            "new ",
+            "former ",
+            "current ",
+        ]
+        # Note: We don't reject honorifics, just flag them for potential stripping
+        for start in ["the ", "a ", "an ", "our ", "their ", "this ", "that "]:
+            if name_lower.startswith(start):
+                logger.debug(f"Rejected '{name}' - starts with '{start}'")
+                return False
+
+        # Must have at least first and last name (2-5 words typical)
         parts = name.split()
         if len(parts) < 2:
             logger.debug(f"Rejected '{name}' - fewer than 2 name parts")
             return False
         if len(parts) > 6:
-            logger.debug(f"Rejected '{name}' - more than 6 name parts (likely a phrase)")
+            logger.debug(
+                f"Rejected '{name}' - more than 6 name parts (likely a phrase)"
+            )
             return False
 
         # Check that name parts look like actual names (capitalized, reasonable length)
         for part in parts:
             # Skip common suffixes and honorifics
-            if part.lower() in {"jr", "jr.", "sr", "sr.", "ii", "iii", "iv", "phd", "md", "esq"}:
+            if part.lower() in {
+                "jr",
+                "jr.",
+                "sr",
+                "sr.",
+                "ii",
+                "iii",
+                "iv",
+                "phd",
+                "md",
+                "esq",
+            }:
                 continue
             # Each name part should be 2-20 characters
             if len(part) < 2 or len(part) > 20:
-                logger.debug(f"Rejected '{name}' - name part '{part}' has invalid length")
+                logger.debug(
+                    f"Rejected '{name}' - name part '{part}' has invalid length"
+                )
                 return False
             # Name parts should start with a letter (allowing for names like O'Brien)
             if not part[0].isalpha():
-                logger.debug(f"Rejected '{name}' - name part '{part}' doesn't start with letter")
+                logger.debug(
+                    f"Rejected '{name}' - name part '{part}' doesn't start with letter"
+                )
                 return False
 
         return True
@@ -407,7 +676,40 @@ Return ONLY valid JSON array, no other text or markdown.'''
         start_year = data.get("start_year")
         if start_year is not None:
             # Validate if present - reject invalid years but keep None as valid
-            if not isinstance(start_year, int) or start_year < 1900 or start_year > 2100:
+            if (
+                not isinstance(start_year, int)
+                or start_year < 1900
+                or start_year > 2100
+            ):
+                start_year = None
+
+        # Extract end_year from response
+        end_year = data.get("end_year")
+        if end_year is not None:
+            if not isinstance(end_year, int) or end_year < 1900 or end_year > 2100:
+                end_year = None
+
+        # Log confidence and reasoning for debugging/auditing
+        confidence = data.get("confidence", 0.0)
+        reasoning = data.get("reasoning", "")
+        source_url = data.get("source_url")
+        if reasoning:
+            logger.debug(
+                f"Extracted '{name}' with confidence {confidence}: {reasoning}"
+            )
+
+        # Clean and normalize the name
+        name = data["name"].strip()
+
+        # Extract start_year from response - allow None for unknown dates
+        start_year = data.get("start_year")
+        if start_year is not None:
+            # Validate if present - reject invalid years but keep None as valid
+            if (
+                not isinstance(start_year, int)
+                or start_year < 1900
+                or start_year > 2100
+            ):
                 start_year = None
 
         # Extract end_year from response
@@ -434,6 +736,7 @@ Return ONLY valid JSON array, no other text or markdown.'''
             photo_url=data.get("photo_url"),
             employment_history=employment_history,
         )
+
 
 _openrouter_service: OpenRouterService | None = None
 

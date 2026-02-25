@@ -9,7 +9,6 @@ from typing import Literal, Optional, List
 from uuid import UUID, uuid4
 
 
-
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 
@@ -52,8 +51,12 @@ class Executive(BaseModel):
         serialize_by_alias=True,
     )
 
-    name: str = Field(..., min_length=1, max_length=200, description="Full name of the executive")
-    title: str = Field(..., min_length=1, max_length=200, description="Job title or position")
+    name: str = Field(
+        ..., min_length=1, max_length=200, description="Full name of the executive"
+    )
+    title: str = Field(
+        ..., min_length=1, max_length=200, description="Job title or position"
+    )
     start_year: int | None = Field(
         default=None,
         ge=1900,
@@ -116,12 +119,18 @@ class Role(BaseModel):
         serialize_by_alias=True,
     )
 
-    id: str = Field(..., min_length=1, max_length=100, description="Unique role identifier")
-    name: str = Field(..., min_length=1, max_length=200, description="Display name for the role")
+    id: str = Field(
+        ..., min_length=1, max_length=100, description="Unique role identifier"
+    )
+    name: str = Field(
+        ..., min_length=1, max_length=200, description="Display name for the role"
+    )
     category: Literal["c_suite", "senior", "division", "custom"] = Field(
         ..., description="Role category classification"
     )
-    is_standard: bool = Field(default=True, description="Whether this is a standard predefined role")
+    is_standard: bool = Field(
+        default=True, description="Whether this is a standard predefined role"
+    )
 
 
 class RoleHolder(BaseModel):
@@ -149,10 +158,15 @@ class RoleHolder(BaseModel):
     executive: Executive = Field(..., description="The executive holding the role")
     start_date: date = Field(..., description="When the executive started in this role")
     end_date: date | None = Field(
-        default=None, description="When the executive ended in this role (None if current)"
+        default=None,
+        description="When the executive ended in this role (None if current)",
     )
-    is_verified: bool = Field(default=False, description="Whether this assignment has been verified")
-    sources: list[str] = Field(default_factory=list, description="List of sources confirming this assignment")
+    is_verified: bool = Field(
+        default=False, description="Whether this assignment has been verified"
+    )
+    sources: list[str] = Field(
+        default_factory=list, description="List of sources confirming this assignment"
+    )
 
     @computed_field
     @property
@@ -179,8 +193,12 @@ class Division(BaseModel):
         serialize_by_alias=True,
     )
 
-    id: str = Field(..., min_length=1, max_length=100, description="Unique division identifier")
-    name: str = Field(..., min_length=1, max_length=200, description="Display name of the division")
+    id: str = Field(
+        ..., min_length=1, max_length=100, description="Unique division identifier"
+    )
+    name: str = Field(
+        ..., min_length=1, max_length=200, description="Display name of the division"
+    )
     parent_division_id: str | None = Field(
         default=None, description="Reference to parent division (None if top-level)"
     )
@@ -204,11 +222,15 @@ class ValidationMetadata(BaseModel):
         serialize_by_alias=True,
     )
 
-    last_validated: datetime = Field(..., description="When the data was last validated")
+    last_validated: datetime = Field(
+        ..., description="When the data was last validated"
+    )
     confidence: float = Field(
         ..., ge=0.0, le=1.0, description="Confidence score from 0.0 to 1.0"
     )
-    needs_refresh: bool = Field(default=False, description="Whether the data needs to be refreshed")
+    needs_refresh: bool = Field(
+        default=False, description="Whether the data needs to be refreshed"
+    )
 
 
 class ExecutiveV2(Executive):
@@ -228,24 +250,40 @@ class ExecutiveV2(Executive):
         default=None, description="Reference to the division this executive belongs to"
     )
     confidence_score: float = Field(
-        default=0.0, ge=0.0, le=1.0, description="Confidence in the accuracy of this data"
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Confidence in the accuracy of this data",
     )
     last_verified: datetime | None = Field(
         default=None, description="When this executive's data was last verified"
     )
     sources: list[str] = Field(
-        default_factory=list, description="List of sources for this executive's information"
+        default_factory=list,
+        description="List of sources for this executive's information",
     )
 
 
 # Standard roles for company leadership
 STANDARD_ROLES: list[Role] = [
-    Role(id="ceo", name="Chief Executive Officer", category="c_suite", is_standard=True),
-    Role(id="cfo", name="Chief Financial Officer", category="c_suite", is_standard=True),
-    Role(id="coo", name="Chief Operating Officer", category="c_suite", is_standard=True),
-    Role(id="cto", name="Chief Technology Officer", category="c_suite", is_standard=True),
-    Role(id="cmo", name="Chief Marketing Officer", category="c_suite", is_standard=True),
-    Role(id="cio", name="Chief Information Officer", category="c_suite", is_standard=True),
+    Role(
+        id="ceo", name="Chief Executive Officer", category="c_suite", is_standard=True
+    ),
+    Role(
+        id="cfo", name="Chief Financial Officer", category="c_suite", is_standard=True
+    ),
+    Role(
+        id="coo", name="Chief Operating Officer", category="c_suite", is_standard=True
+    ),
+    Role(
+        id="cto", name="Chief Technology Officer", category="c_suite", is_standard=True
+    ),
+    Role(
+        id="cmo", name="Chief Marketing Officer", category="c_suite", is_standard=True
+    ),
+    Role(
+        id="cio", name="Chief Information Officer", category="c_suite", is_standard=True
+    ),
 ]
 
 
@@ -318,7 +356,9 @@ class Company(BaseModel):
     subsector: str | None = Field(
         default=None, max_length=200, description="Industry subsector classification"
     )
-    notes: str | None = Field(default=None, max_length=5000, description="Additional notes")
+    notes: str | None = Field(
+        default=None, max_length=5000, description="Additional notes"
+    )
     updated: datetime | None = Field(
         default=None, description="Timestamp of last update"
     )
@@ -390,8 +430,7 @@ class Company(BaseModel):
         # Also include "extra" current CEOs that weren't selected as THE current CEO
         if self.current_ceo:
             extra_current_ceos = [
-                e for e in self.ceo
-                if e.is_current and e.name != self.current_ceo.name
+                e for e in self.ceo if e.is_current and e.name != self.current_ceo.name
             ]
             # These should be treated as historical since we only want one current CEO
             historical.extend(extra_current_ceos)
@@ -455,7 +494,8 @@ class CompanyV2(BaseModel):
         default_factory=list, description="List of divisions/business units"
     )
     custom_roles: list[Role] = Field(
-        default_factory=list, description="List of custom roles defined for this company"
+        default_factory=list,
+        description="List of custom roles defined for this company",
     )
     validation: ValidationMetadata | None = Field(
         default=None, description="Validation metadata for tracking data freshness"
@@ -475,7 +515,9 @@ class CompanyV2(BaseModel):
     subsector: str | None = Field(
         default=None, max_length=200, description="Industry subsector classification"
     )
-    notes: str | None = Field(default=None, max_length=5000, description="Additional notes")
+    notes: str | None = Field(
+        default=None, max_length=5000, description="Additional notes"
+    )
     updated: datetime | None = Field(
         default=None, description="Timestamp of last update"
     )
@@ -506,7 +548,9 @@ class CompanyV2(BaseModel):
         executives = []
         for role_id, holders in self.roles.items():
             if role_id in c_level_role_ids:
-                executives.extend([holder.executive for holder in holders if holder.is_current])
+                executives.extend(
+                    [holder.executive for holder in holders if holder.is_current]
+                )
         return executives
 
     @property
@@ -526,7 +570,9 @@ class CompanyV2(BaseModel):
                         is_senior = True
                         break
                 if is_senior:
-                    executives.extend([holder.executive for holder in holders if holder.is_current])
+                    executives.extend(
+                        [holder.executive for holder in holders if holder.is_current]
+                    )
         return executives
 
     @property
@@ -682,9 +728,14 @@ class TimeRangeQuery(BaseModel):
         serialize_by_alias=True,
     )
 
-    start_year: int = Field(..., ge=1900, le=2100, description="The start year of the range")
+    start_year: int = Field(
+        ..., ge=1900, le=2100, description="The start year of the range"
+    )
     end_year: int | None = Field(
-        default=None, ge=1900, le=2100, description="The end year of the range (None for current)"
+        default=None,
+        ge=1900,
+        le=2100,
+        description="The end year of the range (None for current)",
     )
 
 
@@ -768,16 +819,21 @@ class TalentLandscape(BaseModel):
         updated_at: When this landscape was last updated.
     """
 
-    name: str = Field(..., min_length=1, max_length=200, description="Talent landscape name")
+    name: str = Field(
+        ..., min_length=1, max_length=200, description="Talent landscape name"
+    )
     companies: list[Company] = Field(
         default_factory=list, description="Companies in this landscape"
     )
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc), description="Creation timestamp"
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Creation timestamp",
     )
     updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc), description="Last update timestamp"
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Last update timestamp",
     )
+
 
 class Call(BaseModel):
     id: UUID = Field(default_factory=uuid4)
@@ -792,41 +848,164 @@ class Call(BaseModel):
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel, serialize_by_alias=True, from_attributes=True)
+    model_config = {"from_attributes": True}
 
 
 class PersonMention(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel, serialize_by_alias=True, from_attributes=True)
-
     name: str
     role: Optional[str] = None
     company: Optional[str] = None
 
-class ActionItem(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel, serialize_by_alias=True, from_attributes=True)
 
+class ActionItem(BaseModel):
     description: str
     owner: Optional[str] = None
     urgency: Optional[Literal["low", "medium", "high"]] = None
 
+
 class CallInsight(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel, serialize_by_alias=True, from_attributes=True)
+    id: Optional[UUID] = None
+    summary: str = Field(..., min_length=20)
 
-    summary: str = Field(..., min_length=1)
-
-    tags: List[str] = Field(default_factory=list, description="Predefined business or technical tags")
+    tags: List[str] = Field(..., description="Predefined business or technical tags")
 
     action_items: List[ActionItem] = Field(default_factory=list)
 
     people_mentioned: List[PersonMention] = Field(default_factory=list)
 
     key_decisions: List[str] = Field(default_factory=list)
+    call_type: Optional[
+        Literal[
+            "sales_call",
+            "investor_call",
+            "strategy_meeting",
+            "interview",
+            "operational_meeting",
+            "networking_call",
+            "unknown",
+        ]
+    ] = None
+
+
+
+
+
+class CareerHistory(BaseModel):
+    company: Optional[str] = None
+    title: Optional[str] = None
+    company_type: Optional[str] = None
+    duration_estimate_years: Optional[float] = None
+
+    def to_dict(self):
+        """Convert CareerHistory object to dict"""
+        if self is None:
+            return None
+        return {
+            'company': self.company,
+            'title': self.title,
+            'company_type': self.company_type,
+            'duration_estimate_years': self.duration_estimate_years
+        }
+
+
+
+class LeadershipScope(BaseModel):
+    team_size_managed: Optional[int] = None
+    budget_responsibility: Optional[str] = None
+    geographical_scope: Optional[str] = None
+
+    def to_dict(self):
+        """Convert LeadershipScope object to dict"""
+        if self is None:
+            return None
+        return {
+            'team_size_managed': self.team_size_managed,
+            'budget_responsibility': self.budget_responsibility,
+            'geographical_scope': self.geographical_scope
+        }
+
+
+class TransformationExperience(BaseModel):
+    type: Optional[str] = None
+    description: Optional[str] = None
+    role: Optional[str] = None
+    quantifiable_impact: Optional[str] = None
+
+    def to_dict(self):
+        """Convert TransformationExperience object to dict"""
+        if self is None:
+            return None
+        return {
+            'type': self.type,
+            'description': self.description,
+            'role': self.role,
+            'quantifiable_impact': self.quantifiable_impact
+        }
+
+
+class PrivateEquityExperience(BaseModel):
+    has_pe_experience: Optional[bool] = None
+    description: Optional[str] = None
+
+    def to_dict(self):
+        """Convert PrivateEquityExperience object to dict"""
+        if self is None:
+            return None
+        return {
+            'has_pe_experience': self.has_pe_experience,
+            'description': self.description
+        }
+
+
+class IntervieweeProfile(BaseModel):
+    id: Optional[UUID] = None
+    full_name: str = Field(..., min_length=1, max_length=200)
+    current_title: Optional[str] = None
+    current_company: Optional[str] = None
+    seniority_level: Optional[str] = None
+    industry_focus: List[str] = Field(default_factory=list)
+    years_experience_estimate: Optional[int] = None
+    career_history: List[CareerHistory] = Field(default_factory=list)
+    leadership_scope: Optional[LeadershipScope] = None
+    transformation_experience: Optional[List[TransformationExperience]] = Field(
+        default_factory=list
+    )
+    private_equity_exposure: Optional[PrivateEquityExperience] = None
+    technical_capabilities: List[str] = Field(default_factory=list)
+    notable_achievements: List[str] = Field(default_factory=list)
+    risk_flags: List[str] = Field(default_factory=list)
+    searchable_summary: Optional[str] = None
+    confidence_score: Optional[float] =None
+    embedding: Optional[List[float]] = None
+    has_pe_experience: Optional[bool] = None
+    transformation_types: Optional[List[str]] = Field(default_factory=list)
+
+    def to_dict(self):
+        """Convert IntervieweeProfile object to dict, including nested objects."""
+        if self is None:
+            return None
+        return {
+            'id': str(self.id) if self.id else None,
+            'full_name': self.full_name,
+            'current_title': self.current_title,
+            'current_company': self.current_company,
+            'seniority_level': self.seniority_level,
+            'industry_focus': self.industry_focus,
+            'years_experience_estimate': self.years_experience_estimate,
+            'career_history': [ch.to_dict() for ch in self.career_history],
+            'leadership_scope': self.leadership_scope.to_dict() if self.leadership_scope else None,
+            'transformation_experience': [te.to_dict() for te in self.transformation_experience],
+            'private_equity_exposure': self.private_equity_exposure.to_dict() if self.private_equity_exposure else None,
+            'technical_capabilities': self.technical_capabilities,
+            'notable_achievements': self.notable_achievements,
+            'risk_flags': self.risk_flags,
+            'searchable_summary': self.searchable_summary,
+            'confidence_score': self.confidence_score
+
+        }
 
 class CallAnalysisResult(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel, serialize_by_alias=True, from_attributes=True)
-
-    call_id: UUID
+    call_id: Optional[UUID] 
     insights: CallInsight
-    analyzed_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    interviewee_profile: Optional[IntervieweeProfile]
+    analyzed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

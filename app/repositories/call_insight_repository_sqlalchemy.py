@@ -21,6 +21,7 @@ class CallInsightRepositorySQLAlchemy:
             "action_items": [ai.model_dump() for ai in insights.action_items],
             "people_mentioned": [p.model_dump() for p in insights.people_mentioned],
             "key_decisions": list(insights.key_decisions),
+            "call_type": insights.call_type,
         }
 
         if existing:
@@ -36,10 +37,12 @@ class CallInsightRepositorySQLAlchemy:
 
         self.db.commit()
         self.db.refresh(orm)
-        return self._to_model(orm)
+        # return self._to_model(orm)
+        return self._to_dict(orm)
 
     def get(self, call_id: UUID) -> CallInsight | None:
-        orm = self.db.get(CallInsightORM, call_id)
+        # orm = self.db.get(CallInsightORM, call_id)
+        orm = self.db.query(CallInsightORM).filter(CallInsightORM.call_id == call_id).first()
         if not orm:
             return None
         return self._to_model(orm)
@@ -51,4 +54,21 @@ class CallInsightRepositorySQLAlchemy:
             action_items=[ActionItem(**ai) for ai in (orm.action_items or [])],
             people_mentioned=[PersonMention(**p) for p in (orm.people_mentioned or [])],
             key_decisions=list(orm.key_decisions or []),
+            call_type=orm.call_type,
         )
+
+    def _to_dict(self, model: CallInsight) -> dict:
+        return {
+            "id": model.id.__str__(),
+            "call_id": model.call_id.__str__(),
+            "summary": model.summary,
+            "tags": list(model.tags),
+            "action_items": [
+                {**ai} for ai in model.action_items
+            ],
+            "people_mentioned": [
+                {**p} for p in model.people_mentioned
+            ],
+            "key_decisions": list(model.key_decisions),
+            "call_type": model.call_type,
+        }

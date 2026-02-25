@@ -15,6 +15,7 @@ from app.db.base import Base  # noqa: E402
 from app.db.models.call import CallORM  
 from app.db.models.call_insight import CallInsightORM 
 from app.db.models.company import CompanyORM 
+from app.db.models.interviewee_profile import IntervieweeProfileORM
 
 target_metadata = Base.metadata
 
