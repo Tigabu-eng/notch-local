@@ -1,4 +1,4 @@
-from sqlalchemy import text, select, literal, bindparam
+from sqlalchemy import text, select, bindparam, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -7,6 +7,8 @@ from pgvector.sqlalchemy import Vector
 
 
 from app.db.models.interviewee_profile import IntervieweeProfileORM
+from app.db.models.call_insight import CallInsightORM
+from app.db.models.call import CallORM
 
 class SearchRepository:
 
@@ -18,35 +20,6 @@ class SearchRepository:
         embedding: List[float],
         top_k: int,
     ) -> List[Dict[str, Any]]:
-        # print("sub-1")
-        # # Improve recall
-        # self.db.execute(text("SET ivfflat.probes = 10"))
-
-        # result = self.db.execute(
-        #     text("""
-        #         SELECT 
-        #             id,
-        #             full_name,
-        #             current_title,
-        #             current_company,
-        #             seniority_level,
-        #             searchable_summary,
-        #             transformation_experience,
-        #             private_equity_exposure,
-        #             1 - (embedding <=> CAST(:embedding AS vector(1536))) AS similarity
-        #         FROM notch.interviewee_profiles
-        #         ORDER BY embedding <=> CAST(:embedding AS vector(1536))
-        #         LIMIT :limit
-        #     """),
-        #     {
-        #         "embedding": embedding,
-        #         "limit": top_k
-        #     }
-        # )
-
-        # rows = result.mappings().all()
-        # return rows
-        # embedding_vector = literal(embedding, type_=Vector(1536))
         embedding_param = bindparam(
         "embedding",
         value=embedding,
@@ -71,3 +44,67 @@ class SearchRepository:
 
         result = self.db.execute(stmt)
         return result.mappings().all()
+
+    def search_call_insights(
+        self,
+        embedding: List[float],
+        top_k: int,
+    ) -> List[Dict[str, Any]]:
+        """Semantic search over call insights (summary-level)."""
+        embedding_param = bindparam(
+            "embedding",
+            value=embedding,
+            type_=Vector(1536),
+        )
+
+        stmt = (
+            select(
+                CallInsightORM.id.label("insight_id"),
+                CallInsightORM.call_id,
+                CallInsightORM.summary,
+                CallInsightORM.tags,
+                CallInsightORM.call_type,
+                CallORM.title.label("call_title"),
+                CallORM.call_date,
+                CallORM.status.label("call_status"),
+                (1 - CallInsightORM.embedding.cosine_distance(embedding_param)).label(
+                    "similarity"
+                ),
+            )
+            .select_from(CallInsightORM)
+            .join(CallORM, CallORM.id == CallInsightORM.call_id)
+            .where(CallInsightORM.embedding.isnot(None))
+            .order_by(CallInsightORM.embedding.cosine_distance(embedding_param))
+            .limit(top_k)
+        )
+
+        result = self.db.execute(stmt)
+        return result.mappings().all()
+
+    def get_aggregation_stats(self) -> Dict[str, Any]:
+        """Return basic stats used for aggregation-style questions."""
+        total_calls = self.db.query(func.count(CallORM.id)).scalar() or 0
+        analyzed_calls = (
+            self.db.query(func.count(CallORM.id))
+            .filter(CallORM.status == "analyzed")
+            .scalar()
+            or 0
+        )
+        total_insights = self.db.query(func.count(CallInsightORM.id)).scalar() or 0
+        total_profiles = (
+            self.db.query(func.count(IntervieweeProfileORM.id)).scalar() or 0
+        )
+        calls_by_status_rows = (
+            self.db.query(CallORM.status, func.count(CallORM.id))
+            .group_by(CallORM.status)
+            .all()
+        )
+        calls_by_status = {status: int(cnt) for status, cnt in calls_by_status_rows}
+
+        return {
+            "total_calls": int(total_calls),
+            "analyzed_calls": int(analyzed_calls),
+            "total_insights": int(total_insights),
+            "total_interviewee_profiles": int(total_profiles),
+            "calls_by_status": calls_by_status,
+        }

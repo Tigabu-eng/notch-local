@@ -12,11 +12,27 @@ class CallInsightRepositorySQLAlchemy:
     def __init__(self, db: Session):
         self.db = db
 
-    def upsert(self, call_id: UUID, insights: CallInsight) -> CallInsight:
-        """Insert or update call insights for a call."""
-        existing = self.db.get(CallInsightORM, call_id)
+    def upsert(
+        self,
+        call_id: UUID,
+        insights: CallInsight,
+        *,
+        searchable_text: str | None = None,
+        embedding: list[float] | None = None,
+    ) -> CallInsight:
+        """Insert or update call insights for a call.
+
+        Note: CallInsightORM primary key is `id`, not `call_id`. We upsert by `call_id`.
+        """
+        existing = (
+            self.db.query(CallInsightORM)
+            .filter(CallInsightORM.call_id == call_id)
+            .first()
+        )
         payload = {
             "summary": insights.summary,
+            "searchable_text": searchable_text,
+            "embedding": embedding,
             "tags": list(insights.tags),
             "action_items": [ai.model_dump() for ai in insights.action_items],
             "people_mentioned": [p.model_dump() for p in insights.people_mentioned],
@@ -26,6 +42,8 @@ class CallInsightRepositorySQLAlchemy:
 
         if existing:
             existing.summary = payload["summary"]
+            existing.searchable_text = payload["searchable_text"]
+            existing.embedding = payload["embedding"]
             existing.tags = payload["tags"]
             existing.action_items = payload["action_items"]
             existing.people_mentioned = payload["people_mentioned"]
@@ -49,6 +67,7 @@ class CallInsightRepositorySQLAlchemy:
 
     def _to_model(self, orm: CallInsightORM) -> CallInsight:
         return CallInsight(
+            id=orm.id,
             summary=orm.summary,
             tags=list(orm.tags or []),
             action_items=[ActionItem(**ai) for ai in (orm.action_items or [])],
@@ -62,6 +81,7 @@ class CallInsightRepositorySQLAlchemy:
             "id": model.id.__str__(),
             "call_id": model.call_id.__str__(),
             "summary": model.summary,
+            "searchable_text": getattr(model, "searchable_text", None),
             "tags": list(model.tags),
             "action_items": [
                 {**ai} for ai in model.action_items

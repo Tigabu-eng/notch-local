@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Text, ForeignKey, Numeric, Boolean
+from sqlalchemy import Column, Text, ForeignKey, Numeric, Boolean, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from pgvector.sqlalchemy import Vector
 
@@ -9,6 +9,9 @@ from app.db.base import Base
 
 class IntervieweeProfileORM(Base):
     __tablename__ = "interviewee_profiles"
+    __table_args__ = (
+        UniqueConstraint("call_insight_id", name="uq_interviewee_profiles_call_insight_id"),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     call_insight_id = Column(

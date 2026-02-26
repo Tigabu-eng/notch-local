@@ -15,7 +15,8 @@ from app.repositories.interviewee_profile_repository_sqlalchemy import Interview
 from app.schemas.call import CallCreateRequest, CallResponse
 from app.services import get_openrouter_service
 from app.repositories.search_repository import SearchRepository
-from app.schemas.search import SearchRequest, SearchResponse, InterviewProfileResult
+from app.schemas.search import AgentSearchRequest, AgentSearchResponse
+from app.services.agent_call_search_service import AgentCallSearchService
 
 # router = APIRouter(prefix="/calls", tags=["Calls"], dependencies=[Depends(require_roles(["admin", "super-admin"]))])
 router = APIRouter(prefix="/calls", tags=["Calls"])
@@ -164,7 +165,18 @@ async def analyze_call(call_id: UUID, db: Session = Depends(get_db)):
         calls_repo.update_status(call_id, "failed")
         raise HTTPException(status_code=502, detail="Call analysis failed")
 
-    call_insight = insight_repo.upsert(call_id, analysis_result.insights)
+    call_searchable_text = build_call_searchable_text(
+        call_title=call.title,
+        call_description=call.description,
+        insights=analysis_result.insights,
+    )
+    call_embedding = await service.generate_embedding(call_searchable_text)
+    call_insight = insight_repo.upsert(
+        call_id,
+        analysis_result.insights,
+        searchable_text=call_searchable_text,
+        embedding=call_embedding,
+    )
     if analysis_result.interviewee_profile and analysis_result.interviewee_profile is not {} and analysis_result.insights.call_type == "interview":
         searchable_text = build_searchable_summary(analysis_result.interviewee_profile.to_dict())
         embedding = await service.generate_embedding(searchable_text)
@@ -189,10 +201,16 @@ def get_call_insights(call_id: UUID, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Call not found")
 
     insights = insight_repo.get(call_id)
+    interviewee_profile = None
+
     if not insights:
         raise HTTPException(status_code=404, detail="No insights found for this call")
+    
+    if insights.call_type == "interview":
+        interviewee_profile_repo = IntervieweeProfileRepositorySQLAlchemy(db)
+        interviewee_profile = interviewee_profile_repo.get(insights.id)
 
-    return CallAnalysisResult(call_id=call_id, insights=insights, interviewee_profile=None, )
+    return CallAnalysisResult(call_id=call_id, insights=insights, interviewee_profile=interviewee_profile, )
 
 def build_searchable_summary(profile: dict) -> str:
     return f"""
@@ -209,52 +227,59 @@ def build_searchable_summary(profile: dict) -> str:
     Achievements: {profile.get('notable_achievements')}
     """
 
-@router.post("/search", response_model=SearchResponse)
-async def search_interviewee_perofile(request: SearchRequest, db: Session = Depends(get_db) ):
+
+def build_call_searchable_text(*, call_title: str, call_description: str | None, insights: CallAnalysisResult | None = None, ):
+    """Build a compact text blob to embed for call-level semantic search."""
+    if insights is None:
+        return f"Title: {call_title}\nDescription: {call_description or ''}".strip()
+
+    meta = insights.insights if hasattr(insights, "insights") else insights
+    # meta is CallInsight
+    tags = ", ".join(getattr(meta, "tags", []) or [])
+    key_decisions = " | ".join(getattr(meta, "key_decisions", []) or [])
+    people = ", ".join([p.name for p in (getattr(meta, "people_mentioned", []) or []) if getattr(p, "name", None)])
+    action_items = " | ".join([ai.description for ai in (getattr(meta, "action_items", []) or []) if getattr(ai, "description", None)])
+
+    parts = [
+        f"Title: {call_title}",
+        f"Description: {call_description or ''}",
+        f"Call Type: {getattr(meta, 'call_type', '')}",
+        f"Summary: {getattr(meta, 'summary', '')}",
+    ]
+    if tags:
+        parts.append(f"Tags: {tags}")
+    if people:
+        parts.append(f"People Mentioned: {people}")
+    if key_decisions:
+        parts.append(f"Key Decisions: {key_decisions}")
+    if action_items:
+        parts.append(f"Action Items: {action_items}")
+
+    return "\n".join([p for p in parts if p]).strip()
+
+@router.post("/search", response_model=AgentSearchResponse)
+async def agent_search_calls(request: AgentSearchRequest, db: Session = Depends(get_db)):
+    """AI-agent style search over calls and interviewee profiles.
+
+    Supports:
+    - retrieval: semantic search over call summaries and interviewee profiles
+    - comparative: semantic retrieval + LLM scoring/ranking
+    - aggregation: database stats (counts)
+    """
     service = get_openrouter_service()
     if not service.is_configured:
         raise HTTPException(
             status_code=503,
             detail="OpenRouter is not configured (missing OPENROUTER_API_KEY)",
         )
+
     try:
-        
-
-        search_repo = SearchRepository(db)
-        
-        # embedding = await service.generate_embedding(request.query)
-        embedding = await service.generate_embedding(request.query)
-        
-        rows =  search_repo.search_interview_profiles(embedding=embedding, top_k=request.top_k)
-        filtered = [
-            row for row in rows
-            if float(row["similarity"]) >= request.similarity_threshold 
-        ]
-
-        
-        results = [
-            InterviewProfileResult(
-                id=row["id"],
-                similarity=round(float(row["similarity"]), 4),
-                full_name=row["full_name"],
-                current_title=row["current_title"],
-                current_company=row["current_company"],
-                seniority_level=row["seniority_level"],
-                profile={
-                    "summary": row["searchable_summary"],
-                    "transformation_experience": row["transformation_experience"],
-                    "private_equity_exposure": row["private_equity_exposure"],
-                }
-            )
-            for row in filtered
-        ]
-
-
-        return SearchResponse(
+        agent = AgentCallSearchService(openrouter_service=service, db=db)
+        return await agent.search(
             query=request.query,
-            total_results=len(results),
-            results=results
+            top_k=request.top_k,
+            similarity_threshold=request.similarity_threshold,
         )
     except Exception as e:
-        print(f"Error during search: {e}")
+        print(f"Error during agent search: {e}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -20,7 +20,12 @@ class IntervieweeProfileRepositorySQLAlchemy:
         self, call_insight_id: UUID, profile: IntervieweeProfile
     ) -> IntervieweeProfile:
         """Insert or update interviewee profile for a call insight."""
-        existing = self.db.get(IntervieweeProfileORM, call_insight_id)
+        # IntervieweeProfileORM primary key is `id`, so we upsert by `call_insight_id`.
+        existing = (
+            self.db.query(IntervieweeProfileORM)
+            .filter(IntervieweeProfileORM.call_insight_id == call_insight_id)
+            .first()
+        )
         career_history_data = (
             [ch.to_dict() for ch in profile.career_history]
             if profile.career_history
@@ -73,7 +78,9 @@ class IntervieweeProfileRepositorySQLAlchemy:
         return self._to_dict(orm)
 
     def get(self, call_insight_id: UUID) -> IntervieweeProfile | None:
-        orm = self.db.get(IntervieweeProfileORM, call_insight_id)
+        # orm = self.db.get(IntervieweeProfileORM, call_insight_id)
+        orm = self.db.query(IntervieweeProfileORM).filter(IntervieweeProfileORM.call_insight_id == call_insight_id).first()
+
         if not orm:
             return None
         return self._to_model(orm)
@@ -88,7 +95,7 @@ class IntervieweeProfileRepositorySQLAlchemy:
         )
     def _to_dict(self, model: IntervieweeProfileORM) -> dict:
             return {
-                "id": model.id.__str__() if model.id else None,
+                "id": model.id ,
                 "full_name": model.full_name,
                 "current_title": model.current_title,
                 "current_company": model.current_company,

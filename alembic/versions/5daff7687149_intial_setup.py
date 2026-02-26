@@ -34,7 +34,8 @@ def upgrade() -> None:
     sa.Column('status', sa.String(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.PrimaryKeyConstraint('id'),
-    schema='public'
+    schema='public',
+    if_not_exists=True
     )
     op.create_table('companies',
     sa.Column('id', sa.String(), nullable=False),
@@ -53,12 +54,16 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('name'),
-    schema='public'
+    schema='public',
+    if_not_exists=True
+
     )
     op.create_table('call_insights',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('call_id', sa.UUID(), nullable=False),
     sa.Column('summary', sa.Text(), nullable=False),
+    sa.Column('searchable_text', sa.Text(), nullable=True),
+    sa.Column('embedding', sa.Text(), nullable=True),
     sa.Column('tags', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
     sa.Column('action_items', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
     sa.Column('people_mentioned', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
@@ -66,6 +71,7 @@ def upgrade() -> None:
     sa.Column('call_type', sa.Text(), nullable=False),
     sa.ForeignKeyConstraint(['call_id'], ['public.calls.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('call_id'),
     schema='public'
     )
     op.create_table('interviewee_profiles',
@@ -91,11 +97,18 @@ def upgrade() -> None:
     sa.Column('transformation_types', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
     sa.ForeignKeyConstraint(['call_insight_id'], ['public.call_insights.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('call_insight_id'),
     schema='public'
+
     )
     op.create_index(op.f('ix_public_interviewee_profiles_has_pe_experience'), 'interviewee_profiles', ['has_pe_experience'], unique=False, schema='public')
     op.execute("""
         ALTER TABLE public.interviewee_profiles 
+        ALTER COLUMN embedding TYPE public.vector(1536) USING embedding::public.vector(1536);
+    """)
+
+    op.execute("""
+        ALTER TABLE public.call_insights
         ALTER COLUMN embedding TYPE public.vector(1536) USING embedding::public.vector(1536);
     """)
     # ### end Alembic commands ###
