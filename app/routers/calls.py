@@ -276,9 +276,11 @@ async def agent_search_calls(request: AgentSearchRequest, db: Session = Depends(
     try:
         agent = AgentCallSearchService(openrouter_service=service, db=db)
         return await agent.search(
+            session_id=request.session_id,
             query=request.query,
             top_k=request.top_k,
             similarity_threshold=request.similarity_threshold,
+            debug=request.debug,
         )
     except Exception as e:
         print(f"Error during agent search: {e}")

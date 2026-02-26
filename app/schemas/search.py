@@ -8,12 +8,19 @@ from pydantic import BaseModel, Field
 
 
 class AgentSearchRequest(BaseModel):
-    """Request model for AI-agent style search."""
+    """Request model for AI-agent style conversational search/chat."""
 
-    query: str = Field(..., min_length=3)
+    # Client-provided session identifier for context across messages.
+    # If omitted, the API will create one and return it in the response.
+    session_id: Optional[str] = Field(default=None, max_length=64)
+
+    # User message (can be short, e.g., "Hi")
+    query: str = Field(..., min_length=1)
+
     top_k: int = Field(default=10, ge=1, le=50)
     similarity_threshold: float = Field(default=0.4, ge=0.0, le=1.0)
-    # When true, the agent returns the execution plan for debugging.
+
+    # When true, the agent returns its internal plan for debugging.
     debug: bool = Field(default=False)
 
 
@@ -55,12 +62,16 @@ class AggregationStats(BaseModel):
 
 
 class AgentSearchResponse(BaseModel):
-    query: str
-    intent: Literal["retrieval", "comparative", "aggregation"]
-    answer: str
+    session_id: str
+    intent: Literal["chitchat", "retrieval", "comparative", "aggregation"]
+    markdown: str
+
+    # Optional structured payload (useful for UI, not required by chat UX)
     total_results: int = 0
     results: list[SearchResult] = Field(default_factory=list)
     stats: Optional[AggregationStats] = None
+
+    # Debug only
     plan: Optional[dict[str, Any]] = None
 
 
